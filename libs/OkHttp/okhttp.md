@@ -60,6 +60,7 @@ RetryAndFollowUpInterceptor {
 503
 421
 
+
 BridgeInterceptor {
   intercept() {
     // 给request添加headers
@@ -77,6 +78,8 @@ ConnectInterceptor {
     // 初始化RealCall的exchange
     // RealCall.interceptorScopedExchange = result
     // RealCall.exchange = result
+    // 建立连接，或复用连接
+    // socket连接, tls握手等连接相关过程均在此处
     val exchange = realChain.call.initExchange(chain)
     // 初始化chain.exchange
     val connectedChain = realChain.copy(exchange = exchange)
@@ -88,6 +91,15 @@ response流程
 CallServerInterceptor {
 
 }
+
+## 响应流程
+
+BridgeInterceptor
+
+如果响应开启了gzip压缩，则执行gzip解压
+返回原始的Response
+
+响应回到RetryAndFollowUpInterceptor之后，什么情况下会重试
 
 ## 连接建立过程
 
@@ -123,4 +135,15 @@ internal var dns: Dns = Dns.SYSTEM
 
 RouteSelector实例化时会执行resetNextProxy
 
-## 响应流程
+RealConnection.connectTls
+
+## CacheInterceptor
+
+实际请求前怎么匹配缓存
+
+实际请求之后怎么缓存
+
+## CallServerInterceptor
+
+怎么通过socket发送请求
+怎么通过socket接收响应
