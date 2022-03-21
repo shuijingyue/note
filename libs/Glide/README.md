@@ -1,5 +1,5 @@
 - [usages](./usages.md)
 - [lifecycle](./lifecycle.md)
-- [fetch](./fetch.md)
+- [fetch](./fetch/fetch.md)
 - [cache](./cache.md)
 - [module](./module.md)
