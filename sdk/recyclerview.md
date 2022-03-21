@@ -2,6 +2,32 @@
 优化
 
 dispatchLayoutStep1
+dispatchLayoutStep2
+
+dispatchLayoutStep3
+    dispatchLayout
+
+dispatchLayout
+    consumePendingUpdateOperations
+    stopInterceptRequestLayout
+        removeAnimatingView // 动画结束时
+        scrollStep
+            scrollByInternal
+                scrollBy
+                nestedScrollByInternal
+                    nestedScrollBy
+                    onGenericMotionEvent
+                MotionEvent.ACTION_MOVE
+            ViewFlinger#run
+            SmoothScroller#onAnimation
+                ViewFlinger#run
+        consumePendingUpdateOperations
+        focusSearch
+        onMeasure
+        dispatchLayoutStep1
+        dispatchLayoutStep2
+        dispatchLayoutStep3
+    onLayout
 
 处理`adapter`更新
 判断需要执行哪些动画
@@ -208,12 +234,22 @@ ViewHolder tryGetViewHolderForPositionByDeadline(int position,
 
 ## 缓存
 
-RecyclerView.Recycler#scrapView
-
-scrapOrRecycleView
+LinearLayoutManager.LayoutState.mScrapList
 
 LinearLayoutManager#onLayoutChildren
-    -> detachAndScrapAttachedViews
+LinearLayoutManager#layoutForPredictiveAnimations
+
+### mChangedScrap & mAttachedScrap 
+
+RecyclerView.Recycler#scrapView
+两处入口：
+1. RecyclerView.Recycler#getScrapOrHiddenOrCachedHolderForPosition
+
+可以从mHiddenViews转到mAttachedScrap/mChangedScrap
+
+2. LinearLayoutManager#onLayoutChildren
+    -> RecyclerView.Recycler#detachAndScrapAttachedViews
+    -> RecyclerView.Recycler#scrapOrRecycleView
 
 ### mHiddenViews
 
@@ -224,17 +260,129 @@ ChildHelper.mHiddenViews
 
 RecyclerView#addAnimatingView
 
+1. mViewInfoProcessCallback.processDisappeared -> animateDisappearance
+2. dispatchLayout -> dispatchLayoutStep3 -> animateChange
+   1. consumePendingUpdateOperations
+      1. ViewFlinger#run
+      2. mUpdateChildViewsRunnable#run
+         - RecyclerViewDataObserver#triggerUpdateProcessor
+            - RecyclerViewDataObserver#onItemXXX
+      3. RecyclerView#scrollByInternal
+         1. RecyclerView#scrollBy
+         2. onTouchEvent ACTION_MOVE
+      4. RecyclerView#focusSearch
+   2. onLayout 
+
 
 ### mCacheViews 
 
 Recycler#recycleViewHolderInternal
 
 RecyclerView#removeAnimatingView
+    onAnimationFinished
+        dispatchAnimationFinished
+            dispatchRemoveFinished
+            dispatchMoveFinished
+            dispatchChangeFinished
+            dispatchAddFinished
 
-recycleView
-quickRecycleScrapView
+animateMove
+    animateChange
+    animateAppearance
+    animatePersistence
+    animateDisappearance
+
+
+Recycler#tryGetViewHolderForPositionByDeadline
+
+Recycler#recycleView
+1. LayoutManager#removeAndRecycleViewAt
+   1. LayoutManager#removeAndRecycleAllViews
+      1. LiearLayoutManager#onDetachedFromWindow
+      2. LiearLayoutManager#onLayoutChildren
+      3. RecyclerView#removeAndRecycleViews
+         1. setAdapterInternal
+      4. RecyclerView#setLayoutManager
+   2. recycleChildren
+      1. recycleViewsFromStart
+         1. recycleByLayoutState
+            1. fill
+      2. recycleViewsFromEnd
+         1. recycleByLayoutState
+            1. fill
+2. removeAndRecycleView mViewInfoProcessCallback.unused
+   1. dispatchLayoutStep3 -> ViewInfoStore.process
+3. Recycler#quickRecycleScrapView
+   1. Recycler#getScrapOrCachedViewForId
+      1. tryGetViewHolderForPositionByDeadline
+   2. LayoutManager#removeAndRecycleScrapInt
+      1. setLayoutManager
+      2. RecyclerView#removeAndRecycleViews
+         1. setAdapterInternal
+      3. dispatchLayoutStep3
 
 ### RecyclerViewPool
+
+recycleViewHolderInternal
+
+1. recycleCachedViewAt
+   1. updateViewCacheSize
+      1. setViewCacheSize
+         1. setItemViewCacheSize
+      2. setLayoutManager
+      3. dispatchLayoutStep3
+      4. setItemPrefetchEnabled
+   2. recycleAndClearCachedViews
+      1. clear
+         1. removeAndRecycleViews
+         2. setLayoutManager
+         3. onAdapterChanged
+            1. setAdapterInternal
+         4. onDetachedFromWindow
+      2. markKnownViewsInvalid
+   3. recycleViewHolderInternal
+      1. removeAnimatingView
+      2. tryGetViewHolderForPositionByDeadline
+      3. recycleView
+         1. removeAndRecycleView
+         2. removeAndRecycleViewAt
+      4. quickRecycleScrapView
+      5. scrapOrRecycleView
+   4. getScrapOrCachedViewForId
+      1. tryGetViewHolderForPositionByDeadline
+   5. offsetPositionRecordsForRemove
+      1. offsetPositionRecordsForRemove
+         1. offsetPositionsForRemovingInvisible
+            1. dispatchFirstPassAndUpdateViewHolders
+               1. dispatchAndUpdateViewHolders
+                  1. applyUpdate
+                  2. applyRemove
+                     1. preProcess
+                        1. consumePendingUpdateOperations
+                        2. processAdapterUpdatesAndSetAnimationFlags
+                           1. onMeasure
+                           2. dispatchLayoutStep1
+            2. consumeUpdatesInOnePass
+               1. onMeasure
+               2. processAdapterUpdatesAndSetAnimationFlags
+               3. dispatchLayoutStep2
+         2. offsetPositionsForRemovingLaidOutOrNewView
+            1. UpdateOp.REMOVE
+   6. viewRangeUpdate
+      1. markViewHoldersUpdated
+         1. dispatchFirstPassAndUpdateViewHolders
+         2. UpdateOp.UPDATE postponeAndUpdateViewHolders
+         3. UpdateOp.UPDATE consumeUpdatesInOnePass
+
+
+postponeAndUpdateViewHolders
+
+1. applyAdd
+2. applyRemove
+3. applyMove
+4. applyUpate
+
+applyXXX唯一调用地方preProcess
 
 
 ```java
@@ -252,3 +400,11 @@ public static class RecycledViewPool {
     SparseArray<ScrapData> mScrap = new SparseArray<>();
 }
 ```
+
+## 动画
+
+动画实际执行
+
+dispatchLayoutStep3
+
+mViewInfoStore.process(mViewInfoProcessCallback)
