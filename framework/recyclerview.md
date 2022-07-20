@@ -1,6 +1,18 @@
 缓存原理
 优化
 
+RecyclerView
+Adapter
+ViewHolder
+Recycler
+LayoutManager
+ChildHelper
+ViewFlinger
+SmoothScroller
+ViewInfoStore
+ProcessCallback
+ItemAnimator
+
 dispatchLayoutStep1
 dispatchLayoutStep2
 
@@ -63,6 +75,119 @@ layout     dispatchLayoutStep2
 postLayout dispatchLayoutStep3
 
 LinearLayoutManager#onLayoutChildren
+
+计算锚点信息 AnchorInfo
+
+```java
+protected void onMeasure(int widthSpec, int heightSpec) {
+    if (mLayout == null) {
+        defaultOnMeasure(widthSpec, heightSpec);
+        return;
+    }
+    if (mLayout.isAutoMeasureEnabled()) {
+        final int widthMode = MeasureSpec.getMode(widthSpec);
+        final int heightMode = MeasureSpec.getMode(heightSpec);
+
+        /**
+         * 此处应该用defaultMesure代替,但是如果真的改成了defaultMesure会影响现存的三方应用
+         * 并且文档也指出当isAutoMeasureEnabled返回true时,不要重写LayoutManager的onMeasure方法
+         *    
+         * 即此处也调用了defaultMeasure
+         */
+        mLayout.onMeasure(mRecycler, mState, widthSpec, heightSpec);
+
+        final boolean measureSpecModeIsExactly =
+                widthMode == MeasureSpec.EXACTLY && heightMode == MeasureSpec.EXACTLY;
+        if (measureSpecModeIsExactly || mAdapter == null) {
+            return;
+        }
+
+        // State在RecyclerView创建时初始化
+        // State.mLayoutStep 初始值State.STEP_START
+        // State.mLayoutStep 只会在step123和prefetch时更改
+        if (mState.mLayoutStep == State.STEP_START) {
+            dispatchLayoutStep1(); 
+            // mState.mLayoutStep = State.STEP_LAYOUT;
+        }
+        // set dimensions in 2nd step. Pre-layout should happen with old dimensions for
+        // consistency
+        mLayout.setMeasureSpecs(widthSpec, heightSpec);
+        mState.mIsMeasuring = true;
+        // mState.assertLayoutStep(State.STEP_LAYOUT | State.STEP_ANIMATIONS);
+        dispatchLayoutStep2();
+        // mLayout.onLayoutChildren
+        // mState.mLayoutStep = State.STEP_ANIMATIONS;
+
+        // now we can get the width and height from the children.
+        mLayout.setMeasuredDimensionFromChildren(widthSpec, heightSpec);
+
+        // if RecyclerView has non-exact width and height and if there is at least one child
+        // which also has non-exact width & height, we have to re-measure.
+        if (mLayout.shouldMeasureTwice()) {
+            mLayout.setMeasureSpecs(
+                    MeasureSpec.makeMeasureSpec(getMeasuredWidth(), MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+            mState.mIsMeasuring = true;
+            dispatchLayoutStep2();
+            // now we can get the width and height from the children.
+            mLayout.setMeasuredDimensionFromChildren(widthSpec, heightSpec);
+        }
+    } else {
+        if (mHasFixedSize) {
+            mLayout.onMeasure(mRecycler, mState, widthSpec, heightSpec);
+            return;
+        }
+        // custom onMeasure
+        if (mAdapterUpdateDuringMeasure) {
+            startInterceptRequestLayout();
+            onEnterLayoutOrScroll();
+            processAdapterUpdatesAndSetAnimationFlags();
+            onExitLayoutOrScroll();
+
+            if (mState.mRunPredictiveAnimations) {
+                mState.mInPreLayout = true;
+            } else {
+                // consume remaining updates to provide a consistent state with the layout pass.
+                mAdapterHelper.consumeUpdatesInOnePass();
+                mState.mInPreLayout = false;
+            }
+            mAdapterUpdateDuringMeasure = false;
+            stopInterceptRequestLayout(false);
+        } else if (mState.mRunPredictiveAnimations) {
+            // If mAdapterUpdateDuringMeasure is false and mRunPredictiveAnimations is true:
+            // this means there is already an onMeasure() call performed to handle the pending
+            // adapter change, two onMeasure() calls can happen if RV is a child of LinearLayout
+            // with layout_width=MATCH_PARENT. RV cannot call LM.onMeasure() second time
+            // because getViewForPosition() will crash when LM uses a child to measure.
+            setMeasuredDimension(getMeasuredWidth(), getMeasuredHeight());
+            return;
+        }
+
+        if (mAdapter != null) {
+            mState.mItemCount = mAdapter.getItemCount();
+        } else {
+            mState.mItemCount = 0;
+        }
+        startInterceptRequestLayout();
+        mLayout.onMeasure(mRecycler, mState, widthSpec, heightSpec);
+        stopInterceptRequestLayout(false);
+        mState.mInPreLayout = false; // clear
+    }
+}
+```
+
+```java
+static class AnchorInfo {
+    OrientationHelper mOrientationHelper;
+    int mPosition;
+    int mCoordinate;
+    boolean mLayoutFromEnd;
+    boolean mValid;
+}
+```
+
+detachAndScrapAttachedViews
+
 
 ### detail
 
@@ -279,21 +404,27 @@ RecyclerView#addAnimatingView
 Recycler#recycleViewHolderInternal
 
 RecyclerView#removeAnimatingView
-    onAnimationFinished
-        dispatchAnimationFinished
-            dispatchRemoveFinished
-            dispatchMoveFinished
-            dispatchChangeFinished
-            dispatchAddFinished
+    ItemAnimatorRestoreListener#onAnimationFinished
+        ItemAnimator#dispatchAnimationFinished
+            SimpleItemAnimator#dispatchRemoveFinished
+            SimpleItemAnimator#dispatchMoveFinished
+            SimpleItemAnimator#dispatchChangeFinished
+            SimpleItemAnimator#dispatchAddFinished
 
 animateMove
-    animateChange
-    animateAppearance
-    animatePersistence
-    animateDisappearance
+animateAdd
+animateChange
+animateRemove
+
+animateChange
+animateAppearance
+animatePersistence
+animateDisappearance
 
 
 Recycler#tryGetViewHolderForPositionByDeadline
+入口
+LinearLayoutManager.LayoutState#next -> Recycler#next
 
 Recycler#recycleView
 1. LayoutManager#removeAndRecycleViewAt
@@ -320,6 +451,27 @@ Recycler#recycleView
       2. RecyclerView#removeAndRecycleViews
          1. setAdapterInternal
       3. dispatchLayoutStep3
+
+
+fill入口
+
+onLayoutChildren
+    step1
+    step2
+layoutForPredictiveAnimations
+scrollBy
+    scrollHorizontallyBy
+        scrollStep
+            scrollByInternal
+    scrollVerticallyBy
+        scrollStep
+            scrollByInternal
+    fixLayoutStartGap
+        onLayoutChildren
+    fixLayoutEndGap
+        onLayoutChildren
+onFocusSearchFailed
+    focusSearch
 
 ### RecyclerViewPool
 
