@@ -27,6 +27,7 @@ system/core/rootdir/init.zygote64.rc
 frameworks/base/cmds/app_process/app_main.cpp
 
 AppRuntime AndroidRuntime
+
 ```c++
 void AndroidRuntime::start(const char* className, const Vector<String8>& options, bool zygote)
 {
