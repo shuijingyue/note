@@ -26,4 +26,3 @@ LifecycleRegistry
 handleLifecycleEvent & setCurrentState
 
 moveToState -> sync -> backwardPass / forwardPass
-
