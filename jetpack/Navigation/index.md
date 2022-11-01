@@ -5,7 +5,7 @@ this.graphId = graphId
 defaultNavHost = true
 ```
 
-NavBackStackEntry持有lifecycle: LifecycleRegistry
+`NavBackStackEntry`持有`lifecycle: LifecycleRegistry`
 
 记录当前的NavBackStackEntry的 Lifecycle.State 与 hostLifecycleState不同, 
 hostLifecycleState与NavHostFragment保持一致, 而NavBackStackEntry的lifecycle.state受到
@@ -156,3 +156,6 @@ public override fun onCreate(savedInstanceState: Bundle?) {
 
 每个NavBackStackEntry
 
+记录当前的 `NavBackStackEntry` 的 `Lifecycle.State` 与 `hostLifecycleState` 不同, 
+`hostLifecycleState` 与 `NavHostFragment`保持一致, 而`NavBackStackEntry`的
+`lifecycle.state`受到`maxLifecycle`的制约, 与NavHostFragment不一定相同

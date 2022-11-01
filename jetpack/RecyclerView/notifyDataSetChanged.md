@@ -4,6 +4,7 @@ markKnownViewsInvalid
 将所有的ViewHolder都标记为invalid
 
 在dispatchLayoutStep2之后
+
 ```java
 // 此时isPreLayout一定为false
 if (mState.isPreLayout() && holder.isBound()) {
