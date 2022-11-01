@@ -5,7 +5,7 @@ Observable.fromArray(1, 2, 3) // ObservableFromArray
     .subscribe(System.out::println)
 ```
 
-subscribeOn
+### subscribeOn
 
 ```java
 abstract class AbstractObservableWithUpstream<T, U> extends Observable<U> implements HasUpstreamObservableSource<T> {
@@ -39,7 +39,7 @@ public final class ObservableSubscribeOn<T> extends AbstractObservableWithUpstre
 }
 ```
 
-observeOn
+### observeOn
 
 ```java
 public final class ObservableObserveOn<T> extends AbstractObservableWithUpstream<T, T> {
@@ -60,12 +60,13 @@ public final class ObservableObserveOn<T> extends AbstractObservableWithUpstream
 }
 ```
 
-subscribe
+### subscribe
 
 即ObservableObserveOn.subscribeActual
 
 ```java
 // observer LambdaObserver
+// source ObservableSubscribeOn
 @Override
 protected void subscribeActual(Observer<? super T> observer) {
     if (scheduler instanceof TrampolineScheduler) {
@@ -74,6 +75,96 @@ protected void subscribeActual(Observer<? super T> observer) {
         Scheduler.Worker w = scheduler.createWorker();
 
         source.subscribe(new ObserveOnObserver<>(observer, w, delayError, bufferSize));
+    }
+}
+```
+
+```java
+ static final class ObserveOnObserver<T> extends BasicIntQueueDisposable<T>
+    implements Observer<T>, Runnable {
+
+        private static final long serialVersionUID = 6576896619930983584L;
+        final Observer<? super T> downstream; // LambdaObserver
+        final Scheduler.Worker worker; // IoScheduler.EventLoopWorker
+        final boolean delayError; // false
+        final int bufferSize; // 128
+
+        SimpleQueue<T> queue;
+
+        Disposable upstream;
+
+        Throwable error;
+        volatile boolean done;
+
+        volatile boolean disposed;
+
+        int sourceMode;
+
+        boolean outputFused;
+    }
+```
+
+**ObservableSubscribeOn.subscribeActual**
+
+```java
+// observer ObserveOnObserver
+// scheduler IoScheduler
+@Override
+public void subscribeActual(final Observer<? super T> observer) {
+    final SubscribeOnObserver<T> parent = new SubscribeOnObserver<>(observer);
+
+    observer.onSubscribe(parent); // 设置disposable
+
+    parent.setDisposable(scheduler.scheduleDirect(new SubscribeTask(parent)));
+}
+```
+
+```java
+static final class SubscribeOnObserver<T> extends AtomicReference<Disposable> implements Observer<T>, Disposable {
+
+    private static final long serialVersionUID = 8094547886072529208L;
+    final Observer<? super T> downstream; // ObserveOnObserver
+
+    final AtomicReference<Disposable> upstream; // AtomicReference<Disposable>
+}
+```
+
+
+**ObserveOnObserver.onSubscribe**
+
+```java
+// d SubscribeOnObserver
+@Override
+public void onSubscribe(Disposable d) {
+    // upstream(Disposable)校验this.upstream是不是null
+    if (DisposableHelper.validate(this.upstream, d)) {
+        this.upstream = d;
+        // upstream SubscribeOnObserver
+        if (d instanceof QueueDisposable) {
+            @SuppressWarnings("unchecked")
+            QueueDisposable<T> qd = (QueueDisposable<T>) d;
+
+            int m = qd.requestFusion(QueueDisposable.ANY | QueueDisposable.BOUNDARY);
+
+            if (m == QueueDisposable.SYNC) {
+                sourceMode = m;
+                queue = qd;
+                done = true;
+                downstream.onSubscribe(this);
+                schedule();
+                return;
+            }
+            if (m == QueueDisposable.ASYNC) {
+                sourceMode = m;
+                queue = qd;
+                downstream.onSubscribe(this);
+                return;
+            }
+        }
+
+        queue = new SpscLinkedArrayQueue<>(bufferSize);
+
+        downstream.onSubscribe(this);
     }
 }
 ```

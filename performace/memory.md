@@ -55,7 +55,7 @@ gc
 adb shell am dumpheap `<processname>` `<filename>`
 
 ```java
-Debug.dumpHproData(filename) // 暂时挂起所有线程
+Debug.dumpHproData(filename) // 会暂时挂起所有线程
 ```
 
 libmemunreachale + breakpad
